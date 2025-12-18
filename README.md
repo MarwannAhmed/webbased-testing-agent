@@ -69,11 +69,25 @@ The system emphasizes transparency and observability, allowing users to see the 
    pip install -r requirements.txt
    ```
 
-5. **Configure environment variables** (optional)
-   
+5. **Install Playwright browsers**
+   ```bash
+   playwright install chromium
+   ```
+   Optional: Install additional browsers
+   ```bash
+   playwright install firefox
+   playwright install webkit
+   ```
+
+6. **Configure environment variables**
+
    Create a `.env` file in the root directory:
    ```bash
    DEBUG_MODE=false
+   BROWSER_TYPE=chromium
+   HEADLESS=false
+   BROWSER_TIMEOUT=30000
+   WAIT_UNTIL=networkidle
    ```
 
 ### Running the Application
@@ -99,7 +113,8 @@ webbased-testing-agent/
 ├── components/        # UI components
 │   └── __init__.py
 └── utils/             # Utility functions
-    └── __init__.py
+    ├── __init__.py
+    └── browser_controller.py  # Browser automation controller
 ```
 
 ## 🔧 Configuration
