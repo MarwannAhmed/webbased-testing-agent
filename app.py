@@ -7,6 +7,8 @@ from io import BytesIO
 import nest_asyncio
 import asyncio
 import sys
+from agents.test_design_agent import TestDesignAgent
+import pandas as pd
 
 # Fix for Playwright + Streamlit on Windows
 if sys.platform == 'win32':
@@ -37,6 +39,13 @@ def initialize_session_state():
         st.session_state.generated_code = None
     if 'exploration_agent' not in st.session_state:
         st.session_state.exploration_agent = None
+    if 'test_design_agent' not in st.session_state:
+        st.session_state.test_design_agent = None
+    if 'test_plan' not in st.session_state:
+        st.session_state.test_plan = None
+    if 'review_feedback' not in st.session_state:
+        st.session_state.review_feedback = ""
+
 
 def is_url(text: str) -> bool:
     """Check if the text is a valid URL"""
@@ -270,7 +279,13 @@ def main():
             """)
     
     # Main content area
-    tab1, tab2 = st.tabs(["💬 Chat", "📊 Exploration Details"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+    "💬 Chat",
+    "📊 Exploration Details",
+    "🧪 Test Design",
+    "🧾 Test Review & Approval"
+])
+
     
     with tab1:
         st.subheader("Chat Interface")
@@ -325,6 +340,104 @@ def main():
             display_exploration_results(st.session_state.exploration_data)
         else:
             st.info("No exploration data yet. Enter a URL in the chat to get started!")
+
+    with tab3:
+        st.subheader("🧪 Test Design – AI Proposal")
+
+        if st.session_state.current_phase != "exploration_complete" and not st.session_state.test_plan:
+            st.info("Complete page exploration before designing tests.")
+            st.stop()
+
+        # Button to trigger test design
+        if st.session_state.test_plan is None:
+            if st.button("🧪 Generate Test Plan"):
+                if st.session_state.test_design_agent is None:
+                    st.session_state.test_design_agent = TestDesignAgent()
+
+                agent = st.session_state.test_design_agent
+
+                with st.spinner("Designing test plan..."):
+                    st.session_state.test_plan = agent.generate_test_plan(
+                        st.session_state.exploration_data
+                    )
+                    st.session_state.current_phase = "test_design_ready"
+                    st.rerun()
+
+        # Display proposed test plan
+        if st.session_state.test_plan:
+            plan = st.session_state.test_plan
+
+            st.markdown("### 📋 Proposed Test Cases")
+
+            df = pd.DataFrame([
+                {
+                    "ID": tc["id"],
+                    "Title": tc["title"],
+                    "Priority": tc["priority"],
+                    "Type": tc["type"],
+                    "Elements": ", ".join(map(str, tc["related_elements"]))
+                }
+                for tc in plan["test_cases"]
+            ])
+
+            st.dataframe(df, use_container_width=True)
+
+            st.markdown("### 📊 Coverage Summary")
+            st.json(plan["coverage_summary"])
+
+            st.divider()
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("✏️ Request Changes"):
+                    st.session_state.current_phase = "test_review"
+                    st.rerun()
+
+            with col2:
+                if st.button("✅ Approve Test Plan"):
+                    st.session_state.current_phase = "test_design_approved"
+                    st.success("Test plan approved. You may proceed to test generation.")
+
+    with tab4:
+        st.subheader("🧾 Test Review & Approval")
+
+        if st.session_state.current_phase not in ["test_review", "test_design_approved"]:
+            st.info("No test plan is currently under review.")
+            st.stop()
+
+        plan = st.session_state.test_plan
+        agent = st.session_state.test_design_agent
+
+        st.markdown("### ✏️ Reviewer Feedback")
+
+        st.session_state.review_feedback = st.text_area(
+            "Describe what should be changed, added, or removed:",
+            value=st.session_state.review_feedback,
+            height=120
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("🔁 Refine Test Plan"):
+                if not st.session_state.review_feedback.strip():
+                    st.warning("Please provide feedback before refining.")
+                else:
+                    with st.spinner("Refining test plan..."):
+                        st.session_state.test_plan = agent.refine_test_plan(
+                            existing_plan=plan,
+                            reviewer_feedback=st.session_state.review_feedback
+                        )
+                        st.session_state.review_feedback = ""
+                        st.session_state.current_phase = "test_design_ready"
+                        st.success("Test plan refined.")
+                        st.rerun()
+
+        with col2:
+            if st.session_state.current_phase == "test_design_approved":
+                st.success("✅ Test plan approved.")
+                st.markdown("You may proceed to **test creation (Phase 3)**.")
 
 if __name__ == "__main__":
     main()
