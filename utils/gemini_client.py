@@ -91,11 +91,35 @@ class GeminiClient:
             
         except Exception as e:
             response_time = time.time() - start_time
+            error_str = str(e)
+            
+            # Check for quota/rate limit errors
+            error_type = "unknown"
+            retry_after = None
+            quota_info = {}
+            
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                error_type = "quota_exceeded"
+                
+                # Try to extract retry delay
+                import re
+                retry_match = re.search(r'retry.*?(\d+(?:\.\d+)?)\s*[sS]', error_str)
+                if retry_match:
+                    retry_after = float(retry_match.group(1))
+                
+                # Extract quota limit info
+                limit_match = re.search(r'limit:\s*(\d+)', error_str)
+                if limit_match:
+                    quota_info["limit"] = int(limit_match.group(1))
+            
             return {
                 "status": "error",
                 "text": "",
                 "response_time": response_time,
-                "error": str(e),
+                "error": error_str,
+                "error_type": error_type,
+                "retry_after": retry_after,
+                "quota_info": quota_info,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "total_tokens": 0
@@ -181,11 +205,35 @@ class GeminiClient:
             
         except Exception as e:
             response_time = time.time() - start_time
+            error_str = str(e)
+            
+            # Check for quota/rate limit errors
+            error_type = "unknown"
+            retry_after = None
+            quota_info = {}
+            
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                error_type = "quota_exceeded"
+                
+                # Try to extract retry delay
+                import re
+                retry_match = re.search(r'retry.*?(\d+(?:\.\d+)?)\s*[sS]', error_str)
+                if retry_match:
+                    retry_after = float(retry_match.group(1))
+                
+                # Extract quota limit info
+                limit_match = re.search(r'limit:\s*(\d+)', error_str)
+                if limit_match:
+                    quota_info["limit"] = int(limit_match.group(1))
+            
             return {
                 "status": "error",
                 "text": "",
                 "response_time": response_time,
-                "error": str(e),
+                "error": error_str,
+                "error_type": error_type,
+                "retry_after": retry_after,
+                "quota_info": quota_info,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "total_tokens": 0

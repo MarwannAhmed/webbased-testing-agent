@@ -8,6 +8,7 @@ from utils.test_plan_controller import (
     normalize_test_case_ids,
     build_coverage_summary
 )
+from utils.json_parser import parse_llm_json_response
 
 
 class TestDesignAgent:
@@ -45,9 +46,12 @@ class TestDesignAgent:
         if response.get("status") != "success":
             raise RuntimeError(response.get("error", "Test design failed"))
 
+        # Parse JSON with improved error handling
         try:
-            raw_plan = json.loads(response["text"])
-        except json.JSONDecodeError as e:
+            raw_plan = parse_llm_json_response(response["text"])
+        except ValueError as e:
+            # Log the actual response for debugging
+            print(f"⚠️ JSON parsing failed. LLM response preview: {response.get('text', '')[:500]}")
             raise ValueError(f"Invalid JSON from LLM: {e}")
 
         self.version += 1
@@ -90,9 +94,12 @@ class TestDesignAgent:
         if response.get("status") != "success":
             raise RuntimeError(response.get("error", "Refinement failed"))
 
+        # Parse JSON with improved error handling
         try:
-            refined_plan = json.loads(response["text"])
-        except json.JSONDecodeError as e:
+            refined_plan = parse_llm_json_response(response["text"])
+        except ValueError as e:
+            # Log the actual response for debugging
+            print(f"⚠️ JSON parsing failed during refinement. LLM response preview: {response.get('text', '')[:500]}")
             raise ValueError(f"Invalid JSON from LLM: {e}")
 
         self.version += 1
