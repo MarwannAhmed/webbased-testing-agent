@@ -35,50 +35,69 @@ class ExplorationAgent:
         """
         print(f"🔍 Starting exploration of: {url}")
         
-        # Step 1: Launch browser and navigate
-        navigation_result = self._navigate_to_page(url)
-        if navigation_result["status"] == "error":
+        try:
+            # Step 1: Launch browser and navigate
+            navigation_result = self._navigate_to_page(url)
+            if navigation_result.get("status") == "error":
+                return {
+                    "status": "error",
+                    "error": navigation_result.get("error", "Navigation failed"),
+                    "phase": "navigation"
+                }
+            
+            # Step 2: Extract DOM elements
+            print("📊 Extracting interactive elements from DOM...")
+            elements = self._extract_elements()
+            
+            # Step 3: Capture screenshot for visual context
+            print("📸 Capturing page screenshot...")
+            screenshot_data = self._capture_screenshot()
+            
+            # Step 4: Analyze page with LLM
+            print("🤖 Analyzing page structure with AI...")
+            ai_analysis = self._analyze_page_with_llm(
+                page_info=navigation_result,
+                elements=elements,
+                screenshot=screenshot_data
+            )
+            
+            # Validate ai_analysis structure
+            if not ai_analysis or not isinstance(ai_analysis, dict):
+                ai_analysis = {
+                    "analysis": {"error": "AI analysis returned invalid data"},
+                    "tokens": 0,
+                    "response_time": 0
+                }
+            
+            # Step 5: Generate structured representation
+            print("✅ Building structured representation...")
+            self.exploration_data = {
+                "status": "success",
+                "url": url,
+                "page_info": navigation_result,
+                "interactive_elements": elements,
+                "ai_analysis": ai_analysis.get("analysis", {}),
+                "screenshot_base64": screenshot_data,
+                "metrics": {
+                    "navigation_time": navigation_result.get("load_time", 0),
+                    "elements_found": len(elements),
+                    "llm_tokens": ai_analysis.get("tokens", 0),
+                    "llm_response_time": ai_analysis.get("response_time", 0),
+                    "total_time": navigation_result.get("load_time", 0) + ai_analysis.get("response_time", 0)
+                }
+            }
+            
+            return self.exploration_data
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Unexpected error in explore_url: {e}")
+            traceback.print_exc()
             return {
                 "status": "error",
-                "error": navigation_result["error"],
-                "phase": "navigation"
+                "error": f"Unexpected error: {str(e)}",
+                "phase": "unknown"
             }
-        
-        # Step 2: Extract DOM elements
-        print("📊 Extracting interactive elements from DOM...")
-        elements = self._extract_elements()
-        
-        # Step 3: Capture screenshot for visual context
-        print("📸 Capturing page screenshot...")
-        screenshot_data = self._capture_screenshot()
-        
-        # Step 4: Analyze page with LLM
-        print("🤖 Analyzing page structure with AI...")
-        ai_analysis = self._analyze_page_with_llm(
-            page_info=navigation_result,
-            elements=elements,
-            screenshot=screenshot_data
-        )
-        
-        # Step 5: Generate structured representation
-        print("✅ Building structured representation...")
-        self.exploration_data = {
-            "status": "success",
-            "url": url,
-            "page_info": navigation_result,
-            "interactive_elements": elements,
-            "ai_analysis": ai_analysis["analysis"],
-            "screenshot_base64": screenshot_data,
-            "metrics": {
-                "navigation_time": navigation_result["load_time"],
-                "elements_found": len(elements),
-                "llm_tokens": ai_analysis["tokens"],
-                "llm_response_time": ai_analysis["response_time"],
-                "total_time": navigation_result["load_time"] + ai_analysis["response_time"]
-            }
-        }
-        
-        return self.exploration_data
     
     def _navigate_to_page(self, url: str) -> Dict[str, Any]:
         """
@@ -204,8 +223,7 @@ class ExplorationAgent:
             print(f"⚠️ Error capturing screenshot: {e}")
             return ""
     
-    def _analyze_page_with_llm(self, page_info: Dict, elements: List[Dict], 
-                                screenshot: str) -> Dict[str, Any]:
+    def _analyze_page_with_llm(self, page_info: Dict, elements: List[Dict], screenshot: str) -> Dict[str, Any]:
         """
         Use the LLM to analyze the page and provide high-level understanding.
         This creates a semantic understanding beyond just DOM structure.
@@ -229,17 +247,17 @@ class ExplorationAgent:
 Analyze this page and provide a structured understanding in JSON format:
 
 {{
-  "page_purpose": "Brief description of what this page does",
-  "main_functionality": ["List", "of", "key", "features"],
-  "user_workflows": ["Typical", "user", "journeys"],
-  "testable_areas": [
-    {{
-      "area": "Name of testable area",
-      "description": "What should be tested",
-      "related_elements": ["element indices from the summary"]
-    }}
-  ],
-  "recommended_test_priority": ["High priority areas to test first"]
+    "page_purpose": "Brief description of what this page does",
+    "main_functionality": ["List", "of", "key", "features"],
+    "user_workflows": ["Typical", "user", "journeys"],
+    "testable_areas": [
+        {{
+        "area": "Name of testable area",
+        "description": "What should be tested",
+        "related_elements": ["element indices from the summary"]
+        }}
+    ],
+    "recommended_test_priority": ["High priority areas to test first"]
 }}
 
 Be concise and focus on test automation relevance."""
@@ -250,33 +268,57 @@ Be concise and focus on test automation relevance."""
                 system_instruction="You are an expert QA engineer analyzing web pages for test automation."
             )
             
-            if response["status"] == "success":
-                # Try to parse JSON from response
-                try:
-                    analysis = json.loads(response["text"])
-                except json.JSONDecodeError:
-                    # If JSON parsing fails, return raw text
-                    analysis = {
-                        "raw_analysis": response["text"],
-                        "parse_error": "Could not parse JSON response"
-                    }
-                
+            if not response or response.get("status") != "success":
+                error_msg = response.get("error", "Unknown LLM error") if response else "No response from LLM"
+                print(f"⚠️ LLM error: {error_msg}")
                 return {
-                    "analysis": analysis,
-                    "tokens": response["total_tokens"],
-                    "response_time": response["response_time"]
-                }
-            else:
-                return {
-                    "analysis": {"error": response.get("error", "Unknown error")},
+                    "analysis": {
+                        "error": error_msg,
+                        "page_purpose": "Analysis failed",
+                        "main_functionality": [],
+                        "user_workflows": [],
+                        "testable_areas": [],
+                        "recommended_test_priority": []
+                    },
                     "tokens": 0,
-                    "response_time": response["response_time"]
+                    "response_time": 0
                 }
+            
+            # Try to parse JSON from response
+            try:
+                analysis = json.loads(response["text"])
+            except json.JSONDecodeError as je:
+                print(f"⚠️ JSON parse error: {je}")
+                # Return raw text with parse error flag
+                analysis = {
+                    "raw_analysis": response["text"],
+                    "parse_error": f"Could not parse JSON: {str(je)}",
+                    "page_purpose": "JSON parse failed",
+                    "main_functionality": [],
+                    "user_workflows": [],
+                    "testable_areas": [],
+                    "recommended_test_priority": []
+                }
+            
+            return {
+                "analysis": analysis,
+                "tokens": response.get("total_tokens", 0),
+                "response_time": response.get("response_time", 0)
+            }
                 
         except Exception as e:
             print(f"⚠️ Error in LLM analysis: {e}")
+            import traceback
+            traceback.print_exc()
             return {
-                "analysis": {"error": str(e)},
+                "analysis": {
+                    "error": str(e),
+                    "page_purpose": "Exception during analysis",
+                    "main_functionality": [],
+                    "user_workflows": [],
+                    "testable_areas": [],
+                    "recommended_test_priority": []
+                },
                 "tokens": 0,
                 "response_time": 0
             }
@@ -290,9 +332,9 @@ Be concise and focus on test automation relevance."""
         
         for idx, elem in enumerate(elements[:50]):  # Limit to first 50 elements
             tag = elem.get("tag", "unknown")
-            elem_type = elem.get("type", "")
-            text = elem.get("text", "")[:30]  # Truncate text
-            elem_id = elem.get("id", "")
+            elem_type = elem.get("type") or ""
+            text = (elem.get("text") or "")[:30]  # Handle None values, then truncate
+            elem_id = elem.get("id") or ""
             
             # Build a concise description
             desc_parts = [f"[{idx}]", tag]
