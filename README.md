@@ -79,7 +79,14 @@ The system emphasizes transparency and observability, allowing users to see the 
    playwright install webkit
    ```
 
-6. **Configure environment variables**
+6. **Get Gemini API Key**
+
+   Obtain a free API key from Google AI Studio:
+   - Visit https://aistudio.google.com/app/apikey
+   - Click "Create API Key"
+   - Copy the key and add it to your `.env` file as `GEMINI_API_KEY`
+
+7. **Configure environment variables**
 
    Create a `.env` file in the root directory:
    ```bash
@@ -88,6 +95,10 @@ The system emphasizes transparency and observability, allowing users to see the 
    HEADLESS=false
    BROWSER_TIMEOUT=30000
    WAIT_UNTIL=networkidle
+   GEMINI_API_KEY=your_api_key_here
+   GEMINI_MODEL=gemini-2.5-flash
+   GEMINI_TEMPERATURE=0.2
+   GEMINI_MAX_TOKENS=8192
    ```
 
 ### Running the Application
@@ -114,18 +125,9 @@ webbased-testing-agent/
 │   └── __init__.py
 └── utils/             # Utility functions
     ├── __init__.py
-    └── browser_controller.py  # Browser automation controller
+    ├── browser_controller.py  # Browser automation controller
+    └── gemini_client.py       # LLM client for AI integration
 ```
-
-## 🔧 Configuration
-
-Configuration is managed through environment variables in the `.env` file:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEBUG_MODE` | `false` | Enable debug logging |
-
-Additional configuration variables will be added as the implementation progresses.
 
 ## 🛠️ Development
 
@@ -140,8 +142,7 @@ Follow these guidelines when creating new branches:
 
 **Types:**
 - `feature/` - New features or enhancements
-- `bugfix/` - Bug fixes
-- `hotfix/` - Urgent fixes for production
+- `fix/` - Bug fixes
 - `docs/` - Documentation updates
 - `refactor/` - Code refactoring
 - `test/` - Adding or updating tests
@@ -149,8 +150,7 @@ Follow these guidelines when creating new branches:
 
 **Examples:**
 - `feature/add-user-authentication`
-- `bugfix/fix-login-error`
-- `hotfix/security-patch`
+- `fix/fix-login-error`
 - `docs/update-api-documentation`
 - `refactor/optimize-database-queries`
 - `test/add-unit-tests`
@@ -161,7 +161,7 @@ Follow these guidelines when creating new branches:
 - Keep descriptions concise and descriptive
 - Avoid special characters
 
-### Commit Description Convention
+### Commit Guidelines
 
 **Format:**
 ```

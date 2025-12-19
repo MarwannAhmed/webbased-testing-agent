@@ -16,3 +16,9 @@ class Config:
     
     # Page Load Configuration
     WAIT_UNTIL = os.getenv("WAIT_UNTIL", "networkidle")  # load, domcontentloaded, networkidle
+
+    # LLM Configuration
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.2"))
+    GEMINI_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "8192"))
