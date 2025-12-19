@@ -121,6 +121,7 @@ webbased-testing-agent/
 ├── README.md          # Project documentation
 ├── agents/            # Agent implementations
 │   └── __init__.py
+│   └── exploration_agent.py  # Phase 1: Exploration & Knowledge Acquisition
 ├── components/        # UI components
 │   └── __init__.py
 └── utils/             # Utility functions
