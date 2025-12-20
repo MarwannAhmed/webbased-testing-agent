@@ -115,9 +115,13 @@ class TestExecutor:
         """
         Create a wrapper script that executes test code with evidence capture.
         """
-        # Escape the paths for use in string
-        evidence_dir_str = str(self.output_dir).replace("\\", "\\\\")
-        test_file_str = test_file_path.replace("\\", "\\\\")
+        # Convert to absolute path and escape for use in string
+        test_file_absolute = str(Path(test_file_path).resolve())
+        evidence_dir_absolute = str(self.output_dir.resolve())
+        
+        # Escape backslashes for Windows paths
+        evidence_dir_str = evidence_dir_absolute.replace("\\", "\\\\")
+        test_file_str = test_file_absolute.replace("\\", "\\\\")
         
         wrapper = f"""import sys
 import json
@@ -173,7 +177,7 @@ try:
     with open(test_file, "r", encoding="utf-8") as f:
         test_code = f.read()
     
-    # Execute in controlled environment
+    # Execute in controlled environment with helper functions available
     exec_globals = {{
         "sync_playwright": sync_playwright,
         "log_step": log_step,
@@ -183,7 +187,25 @@ try:
         "time": time
     }}
     
+    # Execute the test code to define the test function
     exec(test_code, exec_globals)
+    
+    # Find and execute the test function
+    # Look for any function that starts with 'test_'
+    test_function = None
+    for name, obj in exec_globals.items():
+        if callable(obj) and name.startswith('test_'):
+            test_function = obj
+            print(f"[LOG] Found test function: {{name}}", file=sys.stderr)
+            break
+    
+    if test_function is None:
+        raise ValueError("No test function found (function name must start with 'test_')")
+    
+    # Execute the test function
+    print(f"[LOG] Executing test function...", file=sys.stderr)
+    test_function()
+    print(f"[LOG] Test function completed successfully", file=sys.stderr)
     
     # Save execution log
     log_file = evidence_dir / "execution_log.json"
@@ -195,7 +217,7 @@ try:
     with open(screenshots_file, "w") as f:
         json.dump(screenshots, f, indent=2)
     
-    print("[SUCCESS] Test execution completed", file=sys.stderr)
+    print("[SUCCESS] Test execution completed")
     sys.exit(0)
     
 except AssertionError as e:
@@ -215,9 +237,13 @@ except Exception as e:
         Run the test file and capture output.
         """
         try:
-            # Run the test
+            # Run the test using the SAME Python interpreter as the current process
+            # This ensures we use the same virtual environment with Playwright installed
+            import sys
+            python_executable = sys.executable  # Gets the current Python interpreter path
+            
             process = subprocess.Popen(
-                ["python", str(test_file)],
+                [python_executable, str(test_file.resolve())],  # Use sys.executable instead of "python"
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -227,6 +253,30 @@ except Exception as e:
             stdout, stderr = process.communicate()
             exit_code = process.returncode
             
+            # Save stdout to file
+            stdout_file = self.output_dir / f"{test_id}_stdout.txt"
+            with open(stdout_file, "w", encoding="utf-8") as f:
+                f.write(stdout)
+            
+            # Save stderr to file
+            stderr_file = self.output_dir / f"{test_id}_stderr.txt"
+            with open(stderr_file, "w", encoding="utf-8") as f:
+                f.write(stderr)
+            
+            # Save combined output
+            combined_file = self.output_dir / f"{test_id}_output.txt"
+            with open(combined_file, "w", encoding="utf-8") as f:
+                f.write("=" * 80 + "\n")
+                f.write("STDOUT:\n")
+                f.write("=" * 80 + "\n")
+                f.write(stdout)
+                f.write("\n" + "=" * 80 + "\n")
+                f.write("STDERR:\n")
+                f.write("=" * 80 + "\n")
+                f.write(stderr)
+                f.write("\n" + "=" * 80 + "\n")
+                f.write(f"Exit Code: {exit_code}\n")
+        
             # Parse execution log if available
             log_file = self.output_dir / "execution_log.json"
             if log_file.exists():
@@ -259,6 +309,9 @@ except Exception as e:
                 "exit_code": exit_code,
                 "stdout": stdout,
                 "stderr": stderr,
+                "stdout_file": str(stdout_file),
+                "stderr_file": str(stderr_file),
+                "combined_output_file": str(combined_file),
                 "errors": errors,
                 "warnings": warnings
             }

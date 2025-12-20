@@ -21,7 +21,7 @@ class VerificationAgent:
     """
     
     def __init__(self, browser: Optional[BrowserController] = None):
-        self.executor = TestExecutor()
+        self.executor = TestExecutor("results/test_execution")
         self.llm = GeminiClient()
         self.browser = browser
         self.execution_results = []

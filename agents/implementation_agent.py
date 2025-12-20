@@ -251,15 +251,25 @@ PAGE URL:
 ELEMENT LOCATORS:
 {json.dumps(locator_info, indent=2)}
 
+IMPORTANT: This test will be executed in a wrapper environment that provides:
+- sync_playwright: Available globally
+- log_step(step_name, details): Function to log each test step
+- capture_screenshot(page, name): Function to capture screenshots
+- evidence_dir: Path object for saving files
+
 REQUIREMENTS:
-1. Use Playwright Python API (from playwright.sync_api import sync_playwright)
+1. Use Playwright Python API (sync_playwright is already imported)
 2. Use the provided locators - prefer the "best_locator" for each element
 3. Follow the test steps exactly
 4. Include proper assertions for expected results
-5. Add comments explaining key actions
-6. Handle common errors gracefully (timeouts, element not found)
-7. Use descriptive variable names
-8. Structure code with setup, test steps, and assertions
+5. **Call log_step() before each major action to log what's happening**
+6. **Call capture_screenshot(page, "descriptive_name") after key steps**
+7. Add comments explaining key actions
+8. Handle common errors gracefully (timeouts, element not found)
+9. Use descriptive variable names
+10. Structure code with setup, test steps, and assertions
+11. **IMPORTANT: Use Python syntax only - NO JavaScript regex /pattern/ syntax**
+12. **For regex patterns in assertions, use re.compile(r"pattern") or plain strings**
 
 OUTPUT FORMAT:
 Return ONLY the Python test code. Do not include markdown code blocks or explanations.
@@ -268,22 +278,40 @@ The code should be a complete, runnable test function.
 Example structure:
 ```python
 def test_{test_case.get('id', 'test').lower().replace('-', '_')}():
-    from playwright.sync_api import sync_playwright
+    \"\"\"
+    Test Case: {test_case.get('title', 'Test')}
+    ID: {test_case.get('id', 'N/A')}
+    Priority: {test_case.get('priority', 'N/A')}
+    Type: {test_case.get('type', 'N/A')}
+    \"\"\"
+    from playwright.sync_api import expect
     
     with sync_playwright() as p:
+        log_step("Setup: Launching browser")
         browser = p.chromium.launch(headless=False)
         page = browser.new_page()
         
-        # Navigate to page
-        page.goto("{page_url}")
-        
-        # Test steps here using provided locators
-        
-        # Assertions
-        # ...
-        
-        browser.close()
-```
+        try:
+            log_step("Navigate to page", {{"url": "{page_url}"}})
+            page.goto("{page_url}")
+            capture_screenshot(page, "page_loaded")
+            
+            # Locate elements using provided best_locators
+            # element = page.locator("locator_from_list")
+            
+            # Test steps here
+            log_step("Step 1: Description of step")
+            # ... perform action ...
+            capture_screenshot(page, "after_step1")
+            
+            # Assertions
+            log_step("Verify: Expected result")
+            # ... assertions ...
+            capture_screenshot(page, "final_state")
+            
+        finally:
+            log_step("Teardown: Closing browser")
+            browser.close()
 """
         return prompt
     

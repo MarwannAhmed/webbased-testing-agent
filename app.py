@@ -133,7 +133,8 @@ def display_exploration_results(exploration_data: dict):
             st.write("**First 10 Elements:**")
             table_data = []
             for idx, elem in enumerate(elements[:10]):
-                locator = elem.get('suggested_locators', [{}])[0]
+                suggested = elem.get("suggested_locators") or []
+                locator = suggested[0] if len(suggested) > 0 else {}
                 table_data.append({
                     "Index": idx,
                     "Tag": elem.get('tag', '').upper(),
@@ -627,10 +628,10 @@ def main():
         with col2:
             if st.session_state.current_phase == "test_design_approved":
                 st.success("✅ Test plan approved.")
-                st.markdown("You may proceed to **test creation (Phase 3)**.")
+                st.markdown("You may proceed to **test creation**.")
 
     with tab5:
-        st.subheader("💻 Code Generation - Phase 3")
+        st.subheader("💻 Code Generation")
         
         # Wrap everything in try-except to catch any errors
         try:
@@ -647,7 +648,7 @@ def main():
             
             # Check prerequisites
             if st.session_state.current_phase != "test_design_approved" and not st.session_state.generated_test_code:
-                st.info("⚠️ Please complete and approve the test plan in Phase 2 before generating code.")
+                st.info("⚠️ Please complete and approve the test plan before generating code.")
                 if st.session_state.test_plan:
                     st.warning("Test plan exists but not approved. Please approve it in the 'Test Review & Approval' tab.")
                     st.markdown("**To proceed:**")
@@ -655,11 +656,11 @@ def main():
                     st.markdown("2. Click **✅ Approve Test Plan** button")
                     st.markdown("3. Return to this tab to generate code")
                 else:
-                    st.error("No test plan found. Please complete Phase 2 (Test Design) first.")
+                    st.error("No test plan found. Please complete Test Design first.")
                 st.stop()
             
             if not st.session_state.test_plan:
-                st.error("No test plan available. Please complete Phase 2 first.")
+                st.error("No test plan available. Please complete Test Design first.")
                 st.markdown("**Steps to complete:**")
                 st.markdown("1. Go to **🧪 Test Design** tab")
                 st.markdown("2. Click **🧪 Generate Test Plan**")
@@ -922,7 +923,7 @@ def main():
             st.markdown("### 🔧 Troubleshooting Steps:")
             st.markdown("1. **Check the error details above**")
             st.markdown("2. **Try resetting**: Click '🔄 Reset Agent' in the sidebar")
-            st.markdown("3. **Check prerequisites**: Ensure test plan is approved in Phase 2")
+            st.markdown("3. **Check prerequisites**: Ensure test plan is approved")
             st.markdown("4. **Refresh the page** (F5) and try again")
             
             # Show current state
@@ -943,12 +944,12 @@ def main():
                 st.write(f"**Exploration Data Exists:** {st.session_state.get('exploration_data') is not None}")
 
     with tab6:
-        st.subheader("✅ Verification & Evidence - Phase 4")
+        st.subheader("✅ Verification & Evidence")
         
         try:
             # Check prerequisites
             if not st.session_state.generated_test_code:
-                st.info("⚠️ Please complete Phase 3 (Code Generation) before verifying tests.")
+                st.info("⚠️ Please complete Code Generation before verifying tests.")
                 st.markdown("**To proceed:**")
                 st.markdown("1. Go to **💻 Code Generation** tab")
                 st.markdown("2. Generate test code")
