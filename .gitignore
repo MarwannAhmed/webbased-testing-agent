@@ -6,3 +6,6 @@ __pycache__/
 
 # Virtual Environments
 .venv/
+
+# Project Specifications
+project.txt
