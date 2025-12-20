@@ -270,16 +270,37 @@ Be concise and focus on test automation relevance."""
             
             if not response or response.get("status") != "success":
                 error_msg = response.get("error", "Unknown LLM error") if response else "No response from LLM"
+                error_type = response.get("error_type", "unknown") if response else "unknown"
+                
+                # Check if it's a quota error
+                is_quota_error = (
+                    error_type == "quota_exceeded" or 
+                    "429" in error_msg or 
+                    "quota" in error_msg.lower() or 
+                    "rate limit" in error_msg.lower()
+                )
+                
                 print(f"⚠️ LLM error: {error_msg}")
+                
+                analysis_error = {
+                    "error": error_msg,
+                    "error_type": error_type if is_quota_error else "general",
+                    "is_quota_error": is_quota_error,
+                    "page_purpose": "Analysis failed - API quota exceeded" if is_quota_error else "Analysis failed",
+                    "main_functionality": [],
+                    "user_workflows": [],
+                    "testable_areas": [],
+                    "recommended_test_priority": []
+                }
+                
+                if is_quota_error and response:
+                    if response.get("retry_after"):
+                        analysis_error["retry_after"] = response.get("retry_after")
+                    if response.get("quota_info"):
+                        analysis_error["quota_info"] = response.get("quota_info")
+                
                 return {
-                    "analysis": {
-                        "error": error_msg,
-                        "page_purpose": "Analysis failed",
-                        "main_functionality": [],
-                        "user_workflows": [],
-                        "testable_areas": [],
-                        "recommended_test_priority": []
-                    },
+                    "analysis": analysis_error,
                     "tokens": 0,
                     "response_time": 0
                 }
