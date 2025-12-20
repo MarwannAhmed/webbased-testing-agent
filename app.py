@@ -9,6 +9,7 @@ import asyncio
 import sys
 from agents.test_design_agent import TestDesignAgent
 import pandas as pd
+from agents.implementation_agent import ImplementationAgent
 
 # Fix for Playwright + Streamlit on Windows
 if sys.platform == 'win32':
@@ -45,6 +46,10 @@ def initialize_session_state():
         st.session_state.test_plan = None
     if 'review_feedback' not in st.session_state:
         st.session_state.review_feedback = ""
+    if 'implementation_agent' not in st.session_state:
+        st.session_state.implementation_agent = None
+    if 'generated_code' not in st.session_state:
+        st.session_state.generated_code = None
 
 
 def is_url(text: str) -> bool:
@@ -279,12 +284,14 @@ def main():
             """)
     
     # Main content area
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "💬 Chat",
-    "📊 Exploration Details",
+    "📊 Exploration",
     "🧪 Test Design",
-    "🧾 Test Review & Approval"
+    "🧾 Test Review & Approval",
+    "🧱 Phase 3: Code Generation"
 ])
+
 
     
     with tab1:
@@ -438,6 +445,45 @@ def main():
             if st.session_state.current_phase == "test_design_approved":
                 st.success("✅ Test plan approved.")
                 st.markdown("You may proceed to **test creation (Phase 3)**.")
+    with tab5:
+        st.subheader("🧱 Phase 3: Playwright Test Generator (Python)")
+
+        if st.session_state.current_phase not in ["test_design_approved", "test_generation"]:
+            st.info("Approve the test plan first (Phase 2) to unlock code generation.")
+            return
+
+        if not st.session_state.exploration_data or not st.session_state.test_plan:
+            st.warning("Missing exploration data or test plan.")
+            st.stop()
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            use_pytest = st.checkbox("Generate pytest-style tests", value=True)
+
+        with col2:
+            if st.button("🚀 Generate Playwright Tests"):
+                if st.session_state.implementation_agent is None:
+                    st.session_state.implementation_agent = ImplementationAgent()
+
+                agent = st.session_state.implementation_agent
+
+                with st.spinner("Generating Playwright test code..."):
+                    result = agent.generate_playwright_tests(
+                        exploration_data=st.session_state.exploration_data,
+                        test_plan=st.session_state.test_plan,
+                        use_pytest=use_pytest
+                    )
+                    st.session_state.generated_code = result
+                    st.session_state.current_phase = "test_generation"
+                    st.rerun()
+
+        if st.session_state.generated_code and st.session_state.generated_code.get("status") == "success":
+            st.markdown("### ✅ Generated Code")
+            st.code(st.session_state.generated_code["code"], language="python")
+
+            st.markdown("### 📊 Generation Metrics")
+            st.json(st.session_state.generated_code["metadata"])
 
 if __name__ == "__main__":
     main()
