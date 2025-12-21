@@ -2,6 +2,7 @@ from typing import Dict, Any, List, Optional
 from utils.gemini_client import GeminiClient
 import json
 import time
+from pathlib import Path
 
 class DesignAgent:
     """
@@ -425,6 +426,48 @@ Ensure all test cases maintain the required structure with id, name, priority, c
         self.test_cases = []
         self.exploration_data = None
         self.coverage_metrics = {}
+    
+    def save_results(self) -> Dict[str, str]:
+        """Save design results to phase2 directory"""
+        if not self.test_cases:
+            return {"error": "No test cases to save"}
+        
+        # Create phase2 directory if it doesn't exist
+        phase2_dir = Path("results/phase2")
+        phase2_dir.mkdir(parents=True, exist_ok=True)
+        
+        saved_files = {}
+        
+        try:
+            # Save test cases as JSON
+            test_cases_path = phase2_dir / "test_cases.json"
+            with open(test_cases_path, 'w', encoding='utf-8') as f:
+                json.dump(self.test_cases, f, indent=2, ensure_ascii=False)
+            saved_files['test_cases'] = str(test_cases_path)
+            
+            # Save coverage metrics as JSON
+            if self.coverage_metrics:
+                coverage_path = phase2_dir / "coverage_metrics.json"
+                with open(coverage_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.coverage_metrics, f, indent=2, ensure_ascii=False)
+                saved_files['coverage'] = str(coverage_path)
+            
+            print(f"✅ Design results saved to {phase2_dir}")
+            return saved_files
+            
+        except Exception as e:
+            print(f"❌ Error saving design results: {e}")
+            return {"error": str(e)}
+    
+    @staticmethod
+    def clear_results():
+        """Delete all saved design results"""
+        phase2_dir = Path("results/phase2")
+        if phase2_dir.exists():
+            for file in phase2_dir.glob("*"):
+                if file.is_file():
+                    file.unlink()
+            print("🗑️ Phase 2 results cleared")
     
     def get_test_summary(self) -> str:
         """

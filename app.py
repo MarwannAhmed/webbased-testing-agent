@@ -171,6 +171,12 @@ def display_exploration_results(exploration_data: dict):
                 st.error(f"Could not display screenshot: {e}")
         else:
             st.warning("No screenshot available")
+    
+    # Saved Files
+    if 'phase1_files' in st.session_state and st.session_state.phase1_files:
+        with st.expander("💾 Saved Results", expanded=False):
+            for file_type, file_path in st.session_state.phase1_files.items():
+                st.text(f"{file_type}: {file_path}")
 
 def display_design_results(design_data: dict):
     """Display design results in a structured format"""
@@ -264,14 +270,23 @@ def display_design_results(design_data: dict):
                 st.markdown("---")
         else:
             st.info("No test cases generated yet.")
+    
+    # Saved Files
+    if 'phase2_files' in st.session_state and st.session_state.phase2_files:
+        with st.expander("💾 Saved Results", expanded=False):
+            for file_type, file_path in st.session_state.phase2_files.items():
+                st.text(f"{file_type}: {file_path}")
 
 def handle_test_generation():
     """Handle test case generation from exploration data"""
     
-    if not st.session_state.exploration_data:
+    # Load exploration data from file instead of session state
+    exploration_data = ExplorationAgent.load_results()
+    
+    if not exploration_data:
         return {
             "type": "error",
-            "content": "❌ No exploration data available. Please explore a URL first."
+            "content": "❌ No exploration data available. Please explore a URL first and ensure results are saved."
         }
     
     status_placeholder = st.empty()
@@ -285,10 +300,10 @@ def handle_test_generation():
         
         # Show progress
         with status_placeholder.container():
-            st.info("🧪 Generating test cases...")
+            st.info("🧪 Generating test cases from saved exploration data...")
         
-        # Generate test cases
-        result = agent.generate_test_cases(st.session_state.exploration_data)
+        # Generate test cases using loaded data
+        result = agent.generate_test_cases(exploration_data)
         
         # Clear status
         status_placeholder.empty()
@@ -303,6 +318,11 @@ def handle_test_generation():
         st.session_state.design_data = result
         st.session_state.test_cases = result["test_cases"]
         st.session_state.current_phase = "design_complete"
+        
+        # Save results to phase2 directory
+        saved_files = agent.save_results()
+        if saved_files and "error" not in saved_files:
+            st.session_state.phase2_files = saved_files
         
         return {
             "type": "success",
@@ -347,6 +367,11 @@ def handle_test_refinement(feedback: str):
         # Update session state
         st.session_state.design_data = result
         st.session_state.test_cases = result["test_cases"]
+        
+        # Save updated results to phase2 directory (overwrites previous)
+        saved_files = agent.save_results()
+        if saved_files and "error" not in saved_files:
+            st.session_state.phase2_files = saved_files
         
         return {
             "type": "success",
@@ -394,6 +419,11 @@ def handle_exploration(url: str):
         # Store in session state
         st.session_state.exploration_data = exploration_data
         st.session_state.current_phase = "exploration_complete"
+        
+        # Save results to phase1 directory
+        saved_files = agent.save_results()
+        if saved_files and "error" not in saved_files:
+            st.session_state.phase1_files = saved_files
         
         # Return success message
         return {
@@ -458,9 +488,15 @@ def main():
                 except:
                     pass
             
+            # Clear saved results from all phases
+            ExplorationAgent.clear_results()
+            DesignAgent.clear_results()
+            
             # Clear all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
+            
+            st.success("🗑️ Agent reset and all results cleared!")
             st.rerun()
         
         st.divider()
@@ -519,9 +555,10 @@ def main():
         st.markdown("### Collaborative Test Design")
         st.markdown("Review and refine AI-generated test cases to achieve optimal coverage.")
         
-        # Check if exploration is complete
-        if not st.session_state.exploration_data:
-            st.warning("⚠️ Please explore a URL first in the **Explore** tab.")
+        # Check if exploration results exist in saved files
+        exploration_data = ExplorationAgent.load_results()
+        if not exploration_data:
+            st.warning("⚠️ Please explore a URL first in the **Explore** tab and ensure results are saved.")
         else:
             # Generate test cases button
             if not st.session_state.design_data:

@@ -3,6 +3,8 @@ from utils.browser_controller import BrowserController
 from utils.gemini_client import GeminiClient
 import json
 import base64
+import time
+from pathlib import Path
 
 class ExplorationAgent:
     """
@@ -379,6 +381,80 @@ Be concise and focus on test automation relevance."""
         """
         
         return summary.strip()
+    
+    def save_results(self) -> Dict[str, str]:
+        """Save exploration results to phase1 directory"""
+        if not self.exploration_data:
+            return {"error": "No exploration data to save"}
+        
+        # Create phase1 directory if it doesn't exist
+        phase1_dir = Path("results/phase1")
+        phase1_dir.mkdir(parents=True, exist_ok=True)
+        
+        saved_files = {}
+        
+        try:
+            # Save exploration data as JSON
+            json_path = phase1_dir / "exploration_data.json"
+            with open(json_path, 'w', encoding='utf-8') as f:
+                # Create a copy without the base64 screenshot to avoid huge JSON
+                data_to_save = self.exploration_data.copy()
+                data_to_save.pop('screenshot_base64', None)
+                json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+            saved_files['json'] = str(json_path)
+            
+            # Save screenshot as PNG
+            screenshot_b64 = self.exploration_data.get('screenshot_base64', '')
+            if screenshot_b64:
+                screenshot_path = phase1_dir / "screenshot.png"
+                screenshot_data = base64.b64decode(screenshot_b64)
+                with open(screenshot_path, 'wb') as f:
+                    f.write(screenshot_data)
+                saved_files['screenshot'] = str(screenshot_path)
+            
+            print(f"✅ Exploration results saved to {phase1_dir}")
+            return saved_files
+            
+        except Exception as e:
+            print(f"❌ Error saving exploration results: {e}")
+            return {"error": str(e)}
+    
+    @staticmethod
+    def load_results() -> Optional[Dict[str, Any]]:
+        """Load exploration results from phase1 directory"""
+        phase1_dir = Path("results/phase1")
+        json_path = phase1_dir / "exploration_data.json"
+        
+        if not json_path.exists():
+            return None
+        
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                exploration_data = json.load(f)
+            
+            # Load screenshot if it exists
+            screenshot_path = phase1_dir / "screenshot.png"
+            if screenshot_path.exists():
+                with open(screenshot_path, 'rb') as f:
+                    screenshot_data = f.read()
+                    exploration_data['screenshot_base64'] = base64.b64encode(screenshot_data).decode('utf-8')
+            
+            print(f"✅ Exploration results loaded from {phase1_dir}")
+            return exploration_data
+            
+        except Exception as e:
+            print(f"❌ Error loading exploration results: {e}")
+            return None
+    
+    @staticmethod
+    def clear_results():
+        """Delete all saved exploration results"""
+        phase1_dir = Path("results/phase1")
+        if phase1_dir.exists():
+            for file in phase1_dir.glob("*"):
+                if file.is_file():
+                    file.unlink()
+            print("🗑️ Phase 1 results cleared")
     
     def cleanup(self):
         """Clean up resources (close browser)"""

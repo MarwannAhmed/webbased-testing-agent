@@ -9,3 +9,6 @@ __pycache__/
 
 # Project Specifications
 project.txt
+
+# Results
+results/
