@@ -6,6 +6,7 @@ from config import Config
 from utils.langfuse_client import langfuse
 from utils.trace_context import get_trace_id
 
+import streamlit as st
 
 class GeminiClient:
     """
@@ -106,6 +107,13 @@ class GeminiClient:
                         ),
                     },
                 )
+                # --- UPDATE GLOBAL SESSION METRICS ---
+                if "llm_metrics" in st.session_state:
+                    st.session_state.llm_metrics.add(
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        response_time=response_time,
+                    )
 
                 return {
                     "status": "success",
@@ -156,6 +164,13 @@ class GeminiClient:
                         "quota_info": quota_info,
                         "response_time_sec": response_time,
                     }
+                )
+            # --- COUNT FAILED CALL TIME ---
+            if "llm_metrics" in st.session_state:
+                st.session_state.llm_metrics.add(
+                    input_tokens=0,
+                    output_tokens=0,
+                    response_time=response_time,
                 )
 
             return {
@@ -240,7 +255,14 @@ class GeminiClient:
                 "model": Config.GEMINI_MODEL
             }
             self.request_history.append(request_data)
-            
+            from streamlit import session_state
+
+            if "llm_metrics" in session_state:
+                session_state.llm_metrics.add(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    response_time=response_time
+                )
             return {
                 "status": "success",
                 "text": response.text,
@@ -258,6 +280,14 @@ class GeminiClient:
             error_type = "unknown"
             retry_after = None
             quota_info = {}
+            from streamlit import session_state
+
+            if "llm_metrics" in session_state:
+                session_state.llm_metrics.add(
+                    input_tokens=0,
+                    output_tokens=0,
+                    response_time=response_time
+                )
             
             if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
                 error_type = "quota_exceeded"
@@ -272,7 +302,7 @@ class GeminiClient:
                 limit_match = re.search(r'limit:\s*(\d+)', error_str)
                 if limit_match:
                     quota_info["limit"] = int(limit_match.group(1))
-            
+
             return {
                 "status": "error",
                 "text": "",

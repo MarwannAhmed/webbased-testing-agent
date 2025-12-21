@@ -18,6 +18,7 @@ import pandas as pd
 import uuid
 from utils.trace_context import set_trace_id
 from utils.langfuse_client import langfuse
+from utils.llm_metrics import LLMMetrics
 
 # Fix for Playwright + Streamlit on Windows
 if sys.platform == 'win32':
@@ -75,7 +76,8 @@ def initialize_session_state():
         st.session_state.refactored_code = None
     if "trace_id" not in st.session_state:
         st.session_state.trace_id = str(uuid.uuid4())
-
+    if "llm_metrics" not in st.session_state:
+        st.session_state.llm_metrics = LLMMetrics()
 
 def is_url(text: str) -> bool:
     """Check if the text is a valid URL"""
@@ -339,10 +341,13 @@ def main():
         # Quick Stats
         if st.session_state.exploration_data:
             st.subheader("📊 Session Stats")
-            data = st.session_state.exploration_data
-            st.metric("Total Tokens Used", data['metrics']['llm_tokens'])
-            st.metric("Total Time", f"{data['metrics']['total_time']:.2f}s")
-            st.metric("Elements Found", data['metrics']['elements_found'])
+            metrics = st.session_state.llm_metrics.to_dict()
+
+            st.metric("Total LLM Calls", metrics["calls"])
+            st.metric("Total Tokens Used", metrics["total_tokens"])
+            st.metric("Total LLM Time", f"{metrics['total_time']:.2f}s")
+
+           
         
         st.divider()
         
