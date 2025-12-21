@@ -1,3 +1,5 @@
+import uuid
+import langfuse
 import streamlit as st
 from config import Config
 from agents.exploration_agent import ExplorationAgent
@@ -13,6 +15,10 @@ from agents.verification_agent import VerificationAgent
 from utils.browser_controller import BrowserController
 import pandas as pd
 
+import uuid
+from utils.trace_context import set_trace_id
+from utils.langfuse_client import langfuse
+
 # Fix for Playwright + Streamlit on Windows
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -27,6 +33,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 def initialize_session_state():
     """Initialize Streamlit session state variables"""
@@ -66,6 +73,8 @@ def initialize_session_state():
         st.session_state.user_critique = ""
     if 'refactored_code' not in st.session_state:
         st.session_state.refactored_code = None
+    if "trace_id" not in st.session_state:
+        st.session_state.trace_id = str(uuid.uuid4())
 
 
 def is_url(text: str) -> bool:
@@ -304,7 +313,12 @@ The page exploration was partially successful (elements were found), but the AI 
 def main():
     # Initialize session state
     initialize_session_state()
-    
+  
+
+    if "trace_id" not in st.session_state:
+        st.session_state.trace_id = str(uuid.uuid4())
+
+    set_trace_id(st.session_state.trace_id)
     # Header
     st.title("🤖 Web-based Testing Agent")
     st.markdown("*Your AI-powered QA partner for test exploration, design, and implementation*")

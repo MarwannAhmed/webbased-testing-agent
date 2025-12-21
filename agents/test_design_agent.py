@@ -1,6 +1,9 @@
 from typing import Dict, Any, List
 import json
 import time
+from utils.langfuse_client import langfuse
+from utils.trace_context import get_trace_id
+
 
 from utils.gemini_client import GeminiClient
 from utils.test_plan_controller import (
@@ -32,45 +35,56 @@ class TestDesignAgent:
         """
         Generate an initial test plan from exploration data.
         """
+        trace_id = get_trace_id()
 
-        prompt = self._build_generation_prompt(exploration_data)
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="phase.test_design.generate_plan",
+          
+        ):
+            # generate_test_plan logic
 
-        response = self.llm.generate_structured(
-            prompt=prompt,
-            system_instruction=(
-                "You are a senior QA engineer designing precise, "
-                "grounded, and automation-ready test plans."
+
+            prompt = self._build_generation_prompt(exploration_data)
+
+            response = self.llm.generate_structured(
+                prompt=prompt,
+                system_instruction=(
+                    "You are a senior QA engineer designing precise, "
+                    "grounded, and automation-ready test plans."
+                )
             )
-        )
 
-        if response.get("status") != "success":
-            raise RuntimeError(response.get("error", "Test design failed"))
+            if response.get("status") != "success":
+                raise RuntimeError(response.get("error", "Test design failed"))
 
-        # Parse JSON with improved error handling
-        try:
-            raw_plan = parse_llm_json_response(response["text"])
-        except ValueError as e:
-            # Log the actual response for debugging
-            print(f"⚠️ JSON parsing failed. LLM response preview: {response.get('text', '')[:500]}")
-            raise ValueError(f"Invalid JSON from LLM: {e}")
+            # Parse JSON with improved error handling
+            try:
+                raw_plan = parse_llm_json_response(response["text"])
+            except ValueError as e:
+              
+                # Log the actual response for debugging
+                print(f"⚠️ JSON parsing failed. LLM response preview: {response.get('text', '')[:500]}")
+                raise ValueError(f"Invalid JSON from LLM: {e}")
 
-        self.version += 1
+            self.version += 1
 
-        # Normalize + enrich deterministically
-        raw_plan["test_plan_id"] = generate_test_plan_id()
-        raw_plan["page_url"] = exploration_data["url"]
-        raw_plan["test_cases"] = normalize_test_case_ids(raw_plan["test_cases"])
+            # Normalize + enrich deterministically
+            raw_plan["test_plan_id"] = generate_test_plan_id()
+            raw_plan["page_url"] = exploration_data["url"]
+            raw_plan["test_cases"] = normalize_test_case_ids(raw_plan["test_cases"])
 
-        raw_plan["coverage_summary"] = build_coverage_summary(
-            test_cases=raw_plan["test_cases"],
-            total_elements=len(exploration_data["interactive_elements"]),
-            testable_areas=exploration_data["ai_analysis"].get("testable_areas", [])
-        )
+            raw_plan["coverage_summary"] = build_coverage_summary(
+                test_cases=raw_plan["test_cases"],
+                total_elements=len(exploration_data["interactive_elements"]),
+                testable_areas=exploration_data["ai_analysis"].get("testable_areas", [])
+            )
 
-        raw_plan["metadata"] = self._build_metadata(response)
+            raw_plan["metadata"] = self._build_metadata(response)
 
-        self.last_test_plan = raw_plan
-        return raw_plan
+            self.last_test_plan = raw_plan
+          
+            return raw_plan
 
     def refine_test_plan(
         self,
@@ -80,45 +94,56 @@ class TestDesignAgent:
         """
         Refine an existing test plan based on human feedback.
         """
+        trace_id = get_trace_id()
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="phase.test_design.refine_plan",
+           
+        ):
+            # refinement logic
 
-        prompt = self._build_refinement_prompt(existing_plan, reviewer_feedback)
+            prompt = self._build_refinement_prompt(existing_plan, reviewer_feedback)
 
-        response = self.llm.generate_structured(
-            prompt=prompt,
-            system_instruction=(
-                "You are a QA engineer refining a test plan based on human feedback. "
-                "Preserve correctness and avoid unnecessary changes."
+            response = self.llm.generate_structured(
+                prompt=prompt,
+                system_instruction=(
+                    "You are a QA engineer refining a test plan based on human feedback. "
+                    "Preserve correctness and avoid unnecessary changes."
+                )
             )
-        )
 
-        if response.get("status") != "success":
-            raise RuntimeError(response.get("error", "Refinement failed"))
+            if response.get("status") != "success":
+                raise RuntimeError(response.get("error", "Refinement failed"))
 
-        # Parse JSON with improved error handling
-        try:
-            refined_plan = parse_llm_json_response(response["text"])
-        except ValueError as e:
-            # Log the actual response for debugging
-            print(f"⚠️ JSON parsing failed during refinement. LLM response preview: {response.get('text', '')[:500]}")
-            raise ValueError(f"Invalid JSON from LLM: {e}")
+            # Parse JSON with improved error handling
+            try:
+                refined_plan = parse_llm_json_response(response["text"])
+            except ValueError as e:
+                # Log the actual response for debugging
+                
 
-        self.version += 1
+                print(f"⚠️ JSON parsing failed during refinement. LLM response preview: {response.get('text', '')[:500]}")
+                raise ValueError(f"Invalid JSON from LLM: {e}")
 
-        refined_plan["test_cases"] = normalize_test_case_ids(refined_plan["test_cases"])
-        refined_plan["coverage_summary"] = build_coverage_summary(
-            test_cases=refined_plan["test_cases"],
-            total_elements=existing_plan["coverage_summary"]["elements_total"],
-            testable_areas=[]
-        )
+            self.version += 1
 
-        refined_plan["metadata"] = self._build_metadata(
-            response,
-            refined=True,
-            feedback=reviewer_feedback
-        )
+            refined_plan["test_cases"] = normalize_test_case_ids(refined_plan["test_cases"])
+            refined_plan["coverage_summary"] = build_coverage_summary(
+                test_cases=refined_plan["test_cases"],
+                total_elements=existing_plan["coverage_summary"]["elements_total"],
+                testable_areas=[]
+            )
 
-        self.last_test_plan = refined_plan
-        return refined_plan
+            refined_plan["metadata"] = self._build_metadata(
+                response,
+                refined=True,
+                feedback=reviewer_feedback
+            )
+
+            self.last_test_plan = refined_plan
+            
+            
+            return refined_plan
 
     # ==============================================================
     # PROMPTS

@@ -3,6 +3,9 @@ from utils.browser_controller import BrowserController
 from utils.gemini_client import GeminiClient
 import json
 import base64
+from utils.langfuse_client import langfuse
+from utils.trace_context import get_trace_id
+    
 
 class ExplorationAgent:
     """
@@ -35,70 +38,84 @@ class ExplorationAgent:
         """
         print(f"🔍 Starting exploration of: {url}")
         
-        try:
-            # Step 1: Launch browser and navigate
-            navigation_result = self._navigate_to_page(url)
-            if navigation_result.get("status") == "error":
+        trace_id = get_trace_id()
+
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="phase.exploration",
+           
+            input={"url": url}
+        ):
+            # ENTIRE explore_url LOGIC GOES HERE
+
+            try:
+                # Step 1: Launch browser and navigate
+                navigation_result = self._navigate_to_page(url)
+                if navigation_result.get("status") == "error":
+                
+                    return {
+                        "status": "error",
+                        "error": navigation_result.get("error", "Navigation failed"),
+                        "phase": "navigation"
+                    }
+                
+                # Step 2: Extract DOM elements
+                print("📊 Extracting interactive elements from DOM...")
+                elements = self._extract_elements()
+                
+                # Step 3: Capture screenshot for visual context
+                print("📸 Capturing page screenshot...")
+                screenshot_data = self._capture_screenshot()
+                
+                # Step 4: Analyze page with LLM
+                print("🤖 Analyzing page structure with AI...")
+                ai_analysis = self._analyze_page_with_llm(
+                    page_info=navigation_result,
+                    elements=elements,
+                    screenshot=screenshot_data
+                )
+                
+                # Validate ai_analysis structure
+                if not ai_analysis or not isinstance(ai_analysis, dict):
+                    ai_analysis = {
+                        "analysis": {"error": "AI analysis returned invalid data"},
+                        "tokens": 0,
+                        "response_time": 0
+                    }
+                
+                # Step 5: Generate structured representation
+                print("✅ Building structured representation...")
+                self.exploration_data = {
+                    "status": "success",
+                    "url": url,
+                    "page_info": navigation_result,
+                    "interactive_elements": elements,
+                    "ai_analysis": ai_analysis.get("analysis", {}),
+                    "screenshot_base64": screenshot_data,
+                    "metrics": {
+                        "navigation_time": navigation_result.get("load_time", 0),
+                        "elements_found": len(elements),
+                        "llm_tokens": ai_analysis.get("tokens", 0),
+                        "llm_response_time": ai_analysis.get("response_time", 0),
+                        "total_time": navigation_result.get("load_time", 0) + ai_analysis.get("response_time", 0)
+                    }
+                }
+                
+
+                return self.exploration_data
+                
+            except Exception as e:
+                import traceback
+               
+
+                print(f"❌ Unexpected error in explore_url: {e}")
+                traceback.print_exc()
                 return {
                     "status": "error",
-                    "error": navigation_result.get("error", "Navigation failed"),
-                    "phase": "navigation"
+                    "error": f"Unexpected error: {str(e)}",
+                    "phase": "unknown"
                 }
-            
-            # Step 2: Extract DOM elements
-            print("📊 Extracting interactive elements from DOM...")
-            elements = self._extract_elements()
-            
-            # Step 3: Capture screenshot for visual context
-            print("📸 Capturing page screenshot...")
-            screenshot_data = self._capture_screenshot()
-            
-            # Step 4: Analyze page with LLM
-            print("🤖 Analyzing page structure with AI...")
-            ai_analysis = self._analyze_page_with_llm(
-                page_info=navigation_result,
-                elements=elements,
-                screenshot=screenshot_data
-            )
-            
-            # Validate ai_analysis structure
-            if not ai_analysis or not isinstance(ai_analysis, dict):
-                ai_analysis = {
-                    "analysis": {"error": "AI analysis returned invalid data"},
-                    "tokens": 0,
-                    "response_time": 0
-                }
-            
-            # Step 5: Generate structured representation
-            print("✅ Building structured representation...")
-            self.exploration_data = {
-                "status": "success",
-                "url": url,
-                "page_info": navigation_result,
-                "interactive_elements": elements,
-                "ai_analysis": ai_analysis.get("analysis", {}),
-                "screenshot_base64": screenshot_data,
-                "metrics": {
-                    "navigation_time": navigation_result.get("load_time", 0),
-                    "elements_found": len(elements),
-                    "llm_tokens": ai_analysis.get("tokens", 0),
-                    "llm_response_time": ai_analysis.get("response_time", 0),
-                    "total_time": navigation_result.get("load_time", 0) + ai_analysis.get("response_time", 0)
-                }
-            }
-            
-            return self.exploration_data
-            
-        except Exception as e:
-            import traceback
-            print(f"❌ Unexpected error in explore_url: {e}")
-            traceback.print_exc()
-            return {
-                "status": "error",
-                "error": f"Unexpected error: {str(e)}",
-                "phase": "unknown"
-            }
-    
+        
     def _navigate_to_page(self, url: str) -> Dict[str, Any]:
         """
         Navigate to the target URL using the browser controller.

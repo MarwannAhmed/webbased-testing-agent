@@ -10,6 +10,8 @@ from utils.test_executor import TestExecutor
 from utils.gemini_client import GeminiClient
 from utils.browser_controller import BrowserController
 import json
+from utils.langfuse_client import langfuse
+from utils.trace_context import get_trace_id
 
 
 class VerificationAgent:
@@ -43,101 +45,115 @@ class VerificationAgent:
             dict: Execution results with evidence
         """
         print("🔍 Starting test execution and evidence collection...")
-        
-        test_code = generated_code.get("test_code", "")
-        individual_tests = generated_code.get("individual_tests", [])
-        
-        if not test_code:
-            return {
-                "status": "error",
-                "error": "No test code provided"
-            }
-        
-        # Execute all tests or specific ones
-        if test_case_ids and individual_tests:
-            # Execute specific tests - handle both dict and string formats
-            tests_to_run = []
-            for idx, t in enumerate(individual_tests):
-                if isinstance(t, dict):
-                    if t.get("test_id") in test_case_ids:
-                        tests_to_run.append(t)
-                elif isinstance(t, str):
-                    # If test is a string, create a dict for it
-                    test_id = f"test_{idx}"
-                    if test_id in test_case_ids or any(tid in test_id for tid in test_case_ids):
-                        tests_to_run.append({"test_code": t, "test_id": test_id})
-        else:
-            # Execute all tests - normalize format
-            if individual_tests:
+        trace_id = get_trace_id()
+
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="phase.verification.execute_tests",
+          
+            input={"test_case_ids": test_case_ids}
+        ):
+        # ENTIRE execute_tests LOGIC
+
+
+            test_code = generated_code.get("test_code", "")
+            individual_tests = generated_code.get("individual_tests", [])
+            
+            if not test_code:
+                if span:
+                    span.end(error="No test code provided")
+
+                return {
+                    "status": "error",
+                    "error": "No test code provided"
+                }
+            
+            # Execute all tests or specific ones
+            if test_case_ids and individual_tests:
+                # Execute specific tests - handle both dict and string formats
                 tests_to_run = []
                 for idx, t in enumerate(individual_tests):
                     if isinstance(t, dict):
-                        tests_to_run.append(t)
+                        if t.get("test_id") in test_case_ids:
+                            tests_to_run.append(t)
                     elif isinstance(t, str):
-                        tests_to_run.append({"test_code": t, "test_id": f"test_{idx}"})
+                        # If test is a string, create a dict for it
+                        test_id = f"test_{idx}"
+                        if test_id in test_case_ids or any(tid in test_id for tid in test_case_ids):
+                            tests_to_run.append({"test_code": t, "test_id": test_id})
             else:
-                tests_to_run = [{"test_code": test_code, "test_id": "all_tests"}]
-        
-        execution_results = []
-        total_time = 0
-        
-        for test in tests_to_run:
-            # Handle both dict and string formats
-            if isinstance(test, dict):
-                test_id = test.get("test_id", "unknown")
-                test_code_snippet = test.get("test_code", test_code)
-            elif isinstance(test, str):
-                test_id = "unknown"
-                test_code_snippet = test
-            else:
-                test_id = "unknown"
-                test_code_snippet = test_code
+                # Execute all tests - normalize format
+                if individual_tests:
+                    tests_to_run = []
+                    for idx, t in enumerate(individual_tests):
+                        if isinstance(t, dict):
+                            tests_to_run.append(t)
+                        elif isinstance(t, str):
+                            tests_to_run.append({"test_code": t, "test_id": f"test_{idx}"})
+                else:
+                    tests_to_run = [{"test_code": test_code, "test_id": "all_tests"}]
             
-            print(f"  Executing: {test_id}")
+            execution_results = []
+            total_time = 0
             
-            # Execute test
-            result = self.executor.execute_test_code(
-                test_code=test_code_snippet,
-                test_id=test_id,
-                capture_screenshots=True,
-                record_video=False
-            )
+            for test in tests_to_run:
+                # Handle both dict and string formats
+                if isinstance(test, dict):
+                    test_id = test.get("test_id", "unknown")
+                    test_code_snippet = test.get("test_code", test_code)
+                elif isinstance(test, str):
+                    test_id = "unknown"
+                    test_code_snippet = test
+                else:
+                    test_id = "unknown"
+                    test_code_snippet = test_code
+                
+                print(f"  Executing: {test_id}")
+                
+                # Execute test
+                result = self.executor.execute_test_code(
+                    test_code=test_code_snippet,
+                    test_id=test_id,
+                    capture_screenshots=True,
+                    record_video=False
+                )
+                
+                execution_results.append(result)
+                total_time += result.get("execution_time", 0)
             
-            execution_results.append(result)
-            total_time += result.get("execution_time", 0)
-        
-        # Collect all evidence
-        all_screenshots = []
-        all_logs = []
-        
-        for result in execution_results:
-            all_screenshots.extend(result.get("screenshots", []))
-            all_logs.extend(result.get("execution_log", []))
-        
-        # Generate execution report
-        report = self._generate_execution_report(execution_results, all_screenshots, all_logs)
-        
-        self.execution_results = execution_results
-        self.evidence_collected = {
-            "screenshots": all_screenshots,
-            "logs": all_logs,
-            "report": report
-        }
-        
-        return {
-            "status": "success",
-            "execution_results": execution_results,
-            "evidence": self.evidence_collected,
-            "summary": {
-                "tests_executed": len(execution_results),
-                "tests_passed": sum(1 for r in execution_results if r.get("status") == "success"),
-                "tests_failed": sum(1 for r in execution_results if r.get("status") == "failed"),
-                "total_execution_time": total_time,
-                "screenshots_count": len(all_screenshots),
-                "log_entries": len(all_logs)
+            # Collect all evidence
+            all_screenshots = []
+            all_logs = []
+            
+            for result in execution_results:
+                all_screenshots.extend(result.get("screenshots", []))
+                all_logs.extend(result.get("execution_log", []))
+            
+            # Generate execution report
+            report = self._generate_execution_report(execution_results, all_screenshots, all_logs)
+            
+            self.execution_results = execution_results
+            self.evidence_collected = {
+                "screenshots": all_screenshots,
+                "logs": all_logs,
+                "report": report
             }
-        }
-    
+            
+
+            return {
+                "status": "success",
+                "execution_results": execution_results,
+                "evidence": self.evidence_collected,
+                "summary": {
+                    "tests_executed": len(execution_results),
+                    "tests_passed": sum(1 for r in execution_results if r.get("status") == "success"),
+                    "tests_failed": sum(1 for r in execution_results if r.get("status") == "failed"),
+                    "total_execution_time": total_time,
+                    "screenshots_count": len(all_screenshots),
+                    "log_entries": len(all_logs)
+                }
+            }
+        
     def _generate_execution_report(
         self,
         execution_results: List[Dict[str, Any]],

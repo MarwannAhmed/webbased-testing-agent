@@ -3,6 +3,10 @@ from typing import Optional, Dict, Any
 import time
 from config import Config
 
+from utils.langfuse_client import langfuse
+from utils.trace_context import get_trace_id
+
+
 class GeminiClient:
     """
     Manages interactions with Google Gemini LLM.
@@ -35,83 +39,125 @@ class GeminiClient:
         self.chat_system_instruction = None
     
     def generate(self, prompt: str, system_instruction: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Generate a response from the LLM
-        
-        Args:
-            prompt: The user prompt/query
-            system_instruction: Optional system instruction to guide the model
-            
-        Returns:
-            dict: Contains response text, tokens used, and timing information
-        """
         start_time = time.time()
-        
+        trace_id = get_trace_id()
+
+        # Prepare full prompt
+        full_prompt = prompt
+        if system_instruction:
+            full_prompt = f"{system_instruction}\n\n{prompt}"
+
         try:
-            # Add system instruction if provided
-            full_prompt = prompt
-            if system_instruction:
-                full_prompt = f"{system_instruction}\n\n{prompt}"
-            
-            # Generate response
-            response = self.model.generate_content(full_prompt)
-            
-            # Calculate metrics
-            response_time = time.time() - start_time
-            
-            # Extract token usage (Gemini provides this in response metadata)
-            input_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0
-            output_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0
-            total_tokens = input_tokens + output_tokens
-            
-            # Update tracking
-            self.total_tokens += total_tokens
-            self.total_requests += 1
-            
-            # Store request history
-            request_data = {
-                "timestamp": time.time(),
-                "response_time": response_time,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
-                "model": Config.GEMINI_MODEL
-            }
-            self.request_history.append(request_data)
-            
-            return {
-                "status": "success",
-                "text": response.text,
-                "response_time": response_time,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
-                "finish_reason": response.candidates[0].finish_reason.name if response.candidates else None
-            }
-            
+            # --- LANGFUSE GENERATION (OFFICIAL v2 API) ---
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="gemini.generate",
+                model=Config.GEMINI_MODEL,
+                
+                input={
+                    "prompt": prompt,
+                    "system_instruction": system_instruction,
+                },
+            ) as generation:
+
+                # --- ACTUAL GEMINI CALL ---
+                response = self.model.generate_content(full_prompt)
+
+                response_time = time.time() - start_time
+
+                input_tokens = (
+                    response.usage_metadata.prompt_token_count
+                    if hasattr(response, "usage_metadata")
+                    else 0
+                )
+                output_tokens = (
+                    response.usage_metadata.candidates_token_count
+                    if hasattr(response, "usage_metadata")
+                    else 0
+                )
+                total_tokens = input_tokens + output_tokens
+
+                # Update internal metrics
+                self.total_tokens += total_tokens
+                self.total_requests += 1
+
+                self.request_history.append({
+                    "timestamp": time.time(),
+                    "response_time": response_time,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "model": Config.GEMINI_MODEL,
+                })
+
+                # --- UPDATE LANGFUSE GENERATION ---
+                generation.update(
+                    output=response.text,
+                    usage={
+                        "input": input_tokens,
+                        "output": output_tokens,
+                    },
+                    metadata={
+                        "response_time_sec": response_time,
+                        "finish_reason": (
+                            response.candidates[0].finish_reason.name
+                            if response.candidates
+                            else None
+                        ),
+                    },
+                )
+
+                return {
+                    "status": "success",
+                    "text": response.text,
+                    "response_time": response_time,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "finish_reason": (
+                        response.candidates[0].finish_reason.name
+                        if response.candidates
+                        else None
+                    ),
+                }
+
         except Exception as e:
             response_time = time.time() - start_time
             error_str = str(e)
-            
-            # Check for quota/rate limit errors
+
+            # Detect quota errors
             error_type = "unknown"
             retry_after = None
             quota_info = {}
-            
+
             if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
                 error_type = "quota_exceeded"
-                
-                # Try to extract retry delay
+
                 import re
-                retry_match = re.search(r'retry.*?(\d+(?:\.\d+)?)\s*[sS]', error_str)
+                retry_match = re.search(r"retry.*?(\d+(?:\.\d+)?)\s*[sS]", error_str)
                 if retry_match:
                     retry_after = float(retry_match.group(1))
-                
-                # Extract quota limit info
-                limit_match = re.search(r'limit:\s*(\d+)', error_str)
+
+                limit_match = re.search(r"limit:\s*(\d+)", error_str)
                 if limit_match:
                     quota_info["limit"] = int(limit_match.group(1))
-            
+
+            # --- LANGFUSE ERROR OBSERVATION ---
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="gemini.generate.error",
+              
+            ) as generation:
+                generation.update(
+                    metadata={
+                        "error": error_str,
+                        "error_type": error_type,
+                        "retry_after": retry_after,
+                        "quota_info": quota_info,
+                        "response_time_sec": response_time,
+                    }
+                )
+
             return {
                 "status": "error",
                 "text": "",
@@ -122,8 +168,9 @@ class GeminiClient:
                 "quota_info": quota_info,
                 "input_tokens": 0,
                 "output_tokens": 0,
-                "total_tokens": 0
+                "total_tokens": 0,
             }
+
     
     def generate_structured(self, prompt: str, system_instruction: Optional[str] = None, 
                           response_format: Optional[str] = None) -> Dict[str, Any]:

@@ -17,6 +17,8 @@ from utils.browser_controller import BrowserController
 from utils.locator_strategy import resolve_element_locator, LocatorSelector
 from utils.code_verifier import CodeVerifier, auto_correct_locator
 from utils.json_parser import extract_json_from_text
+from utils.langfuse_client import langfuse
+from utils.trace_context import get_trace_id
 
 
 class ImplementationAgent:
@@ -51,74 +53,85 @@ class ImplementationAgent:
             dict: Generated test code with verification results
         """
         print("🔧 Starting test code generation...")
-        
-        # Filter test cases if specific IDs provided
-        test_cases = test_plan.get("test_cases", [])
-        if test_case_ids:
-            test_cases = [tc for tc in test_cases if tc.get("id") in test_case_ids]
-        
-        if not test_cases:
-            return {
-                "status": "error",
-                "error": "No test cases to generate code for"
-            }
-        
-        generated_tests = []
-        total_tokens = 0
-        total_time = 0
-        verification_results = []
-        
-        for test_case in test_cases:
-            print(f"  Generating code for: {test_case.get('id', 'Unknown')}")
+        trace_id = get_trace_id()
+
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="phase.code_generation",
             
-            # Generate code for this test case
-            result = self._generate_single_test_code(
-                test_case=test_case,
-                exploration_data=exploration_data,
-                page_url=test_plan.get("page_url", exploration_data.get("url", ""))
-            )
+            input={"requested_test_case_ids": test_case_ids}
+        ):
+            # ENTIRE generate_test_code LOGIC
+
+            # Filter test cases if specific IDs provided
+            test_cases = test_plan.get("test_cases", [])
+            if test_case_ids:
+                test_cases = [tc for tc in test_cases if tc.get("id") in test_case_ids]
             
-            if result["status"] == "success":
-                generated_tests.append(result["test_code"])
-                total_tokens += result.get("tokens", 0)
-                total_time += result.get("generation_time", 0)
+            if not test_cases:
+              
+                return {
+                    "status": "error",
+                    "error": "No test cases to generate code for"
+                }
+            
+            generated_tests = []
+            total_tokens = 0
+            total_time = 0
+            verification_results = []
+            
+            for test_case in test_cases:
+                print(f"  Generating code for: {test_case.get('id', 'Unknown')}")
                 
-                # Verify the generated code
-                if self.verifier:
-                    verification = self._verify_and_correct_code(
-                        test_code=result["test_code"],
-                        test_case=test_case,
-                        exploration_data=exploration_data,
-                        page_url=test_plan.get("page_url", "")
-                    )
-                    verification_results.append(verification)
+                # Generate code for this test case
+                result = self._generate_single_test_code(
+                    test_case=test_case,
+                    exploration_data=exploration_data,
+                    page_url=test_plan.get("page_url", exploration_data.get("url", ""))
+                )
+                
+                if result["status"] == "success":
+                    generated_tests.append(result["test_code"])
+                    total_tokens += result.get("tokens", 0)
+                    total_time += result.get("generation_time", 0)
+                    
+                    # Verify the generated code
+                    if self.verifier:
+                        verification = self._verify_and_correct_code(
+                            test_code=result["test_code"],
+                            test_case=test_case,
+                            exploration_data=exploration_data,
+                            page_url=test_plan.get("page_url", "")
+                        )
+                        verification_results.append(verification)
+                    else:
+                        verification_results.append({
+                            "test_id": test_case.get("id"),
+                            "status": "skipped",
+                            "reason": "Browser not available for verification"
+                        })
                 else:
                     verification_results.append({
                         "test_id": test_case.get("id"),
-                        "status": "skipped",
-                        "reason": "Browser not available for verification"
+                        "status": "error",
+                        "error": result.get("error", "Code generation failed")
                     })
-            else:
-                verification_results.append({
-                    "test_id": test_case.get("id"),
-                    "status": "error",
-                    "error": result.get("error", "Code generation failed")
-                })
-        
-        return {
-            "status": "success",
-            "test_code": self._combine_test_code(generated_tests),
-            "individual_tests": generated_tests,
-            "verification_results": verification_results,
-            "metrics": {
-                "tests_generated": len(generated_tests),
-                "total_tokens": total_tokens,
-                "total_time": total_time,
-                "verification_passed": sum(1 for v in verification_results if v.get("status") == "success"),
-                "verification_failed": sum(1 for v in verification_results if v.get("status") == "error")
+           
+
+            return {
+                "status": "success",
+                "test_code": self._combine_test_code(generated_tests),
+                "individual_tests": generated_tests,
+                "verification_results": verification_results,
+                "metrics": {
+                    "tests_generated": len(generated_tests),
+                    "total_tokens": total_tokens,
+                    "total_time": total_time,
+                    "verification_passed": sum(1 for v in verification_results if v.get("status") == "success"),
+                    "verification_failed": sum(1 for v in verification_results if v.get("status") == "error")
+                }
             }
-        }
-    
+        
     def _generate_single_test_code(
         self,
         test_case: Dict[str, Any],
