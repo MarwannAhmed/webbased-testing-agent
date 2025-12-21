@@ -1,6 +1,7 @@
 import streamlit as st
 from config import Config
 from agents.exploration_agent import ExplorationAgent
+from agents.design_agent import DesignAgent
 import re
 import base64
 from io import BytesIO
@@ -25,6 +26,10 @@ st.set_page_config(
 
 def initialize_session_state():
     """Initialize Streamlit session state variables"""
+    if 'llm_tokens' not in st.session_state:
+        st.session_state.llm_tokens = 0
+    if 'total_time' not in st.session_state:
+        st.session_state.total_time = 0.0
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'current_phase' not in st.session_state:
@@ -37,6 +42,12 @@ def initialize_session_state():
         st.session_state.generated_code = None
     if 'exploration_agent' not in st.session_state:
         st.session_state.exploration_agent = None
+    if 'design_agent' not in st.session_state:
+        st.session_state.design_agent = None
+    if 'design_data' not in st.session_state:
+        st.session_state.design_data = None
+    if 'design_messages' not in st.session_state:
+        st.session_state.design_messages = []
 
 def is_url(text: str) -> bool:
     """Check if the text is a valid URL"""
@@ -161,6 +172,195 @@ def display_exploration_results(exploration_data: dict):
         else:
             st.warning("No screenshot available")
 
+def display_design_results(design_data: dict):
+    """Display design results in a structured format"""
+    
+    # Metrics Dashboard
+    with st.expander("📊 Design Metrics", expanded=True):
+        metrics = design_data["metrics"]
+        coverage = design_data["coverage"]
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Test Cases", metrics['total_test_cases'])
+        with col2:
+            st.metric("Coverage", f"{coverage['percentage']:.1f}%")
+        with col3:
+            st.metric("LLM Tokens", metrics['llm_tokens'])
+        with col4:
+            st.metric("Generation Time", f"{metrics['llm_response_time']:.2f}s")
+        
+        # Coverage breakdown
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Element Coverage:**")
+            st.metric("Covered Elements", f"{coverage['covered_elements']} / {coverage['total_elements']}")
+            st.metric("Uncovered Elements", coverage['uncovered_elements'])
+        
+        with col2:
+            # Priority distribution
+            st.markdown("**Priority Distribution:**")
+            priority_dist = coverage.get('priority_distribution', {})
+            for priority, count in priority_dist.items():
+                st.write(f"🔹 {priority}: {count}")
+            
+            # Category distribution
+            st.markdown("**Category Distribution:**")
+            category_dist = coverage.get('category_distribution', {})
+            for category, count in category_dist.items():
+                st.write(f"🔸 {category}: {count}")
+    
+    # Test Cases Table
+    with st.expander("🧪 Test Cases", expanded=True):
+        test_cases = design_data["test_cases"]
+        
+        if test_cases:
+            for tc in test_cases:
+                # Create a card-like display for each test case
+                priority_color = {
+                    "High": "🔴",
+                    "Medium": "🟡",
+                    "Low": "🟢"
+                }.get(tc.get("priority", "Medium"), "⚪")
+                
+                st.markdown(f"### {priority_color} {tc['id']}: {tc['name']}")
+                
+                col1, col2 = st.columns([1, 3])
+                
+                with col1:
+                    st.write(f"**Priority:** {tc.get('priority', 'N/A')}")
+                    st.write(f"**Category:** {tc.get('category', 'N/A')}")
+                    st.write(f"**Status:** {tc.get('status', 'pending').capitalize()}")
+                
+                with col2:
+                    st.markdown("**Test Steps:**")
+                    for idx, step in enumerate(tc.get('steps', []), 1):
+                        st.write(f"{idx}. {step}")
+                    
+                    st.markdown(f"**Expected Result:**")
+                    st.write(tc.get('expected_result', 'N/A'))
+                    
+                    # Show related elements
+                    if tc.get('elements'):
+                        with st.expander("🎯 Elements Used", expanded=False):
+                            for elem in tc['elements']:
+                                elem_text = elem.get('text', '')
+                                elem_id = elem.get('id', '')
+                                elem_name = elem.get('name', '')
+                                
+                                display_text = f"`{elem['tag']}`"
+                                if elem_id:
+                                    display_text += f" (id='{elem_id}')"
+                                elif elem_name:
+                                    display_text += f" (name='{elem_name}')"
+                                if elem_text:
+                                    display_text += f" - {elem_text}"
+                                
+                                st.write(f"- {display_text}")
+                
+                st.markdown("---")
+        else:
+            st.info("No test cases generated yet.")
+
+def handle_test_generation():
+    """Handle test case generation from exploration data"""
+    
+    if not st.session_state.exploration_data:
+        return {
+            "type": "error",
+            "content": "❌ No exploration data available. Please explore a URL first."
+        }
+    
+    status_placeholder = st.empty()
+    
+    try:
+        # Initialize design agent if not exists
+        if st.session_state.design_agent is None:
+            st.session_state.design_agent = DesignAgent()
+        
+        agent = st.session_state.design_agent
+        
+        # Show progress
+        with status_placeholder.container():
+            st.info("🧪 Generating test cases...")
+        
+        # Generate test cases
+        result = agent.generate_test_cases(st.session_state.exploration_data)
+        
+        # Clear status
+        status_placeholder.empty()
+        
+        if result["status"] == "error":
+            return {
+                "type": "error",
+                "content": f"❌ Error generating test cases: {result.get('error', 'Unknown error')}"
+            }
+        
+        # Store in session state
+        st.session_state.design_data = result
+        st.session_state.test_cases = result["test_cases"]
+        st.session_state.current_phase = "design_complete"
+        
+        return {
+            "type": "success",
+            "content": f"✅ Generated **{len(result['test_cases'])}** test cases with **{result['coverage']['percentage']:.1f}%** coverage.",
+            "data": result
+        }
+        
+    except Exception as e:
+        status_placeholder.empty()
+        return {
+            "type": "error",
+            "content": f"❌ Error: {str(e)}"
+        }
+
+def handle_test_refinement(feedback: str):
+    """Handle test case refinement based on user feedback"""
+    
+    if not st.session_state.design_agent:
+        return {
+            "type": "error",
+            "content": "❌ No design session active."
+        }
+    
+    status_placeholder = st.empty()
+    
+    try:
+        agent = st.session_state.design_agent
+        
+        with status_placeholder.container():
+            st.info("🔄 Refining test cases...")
+        
+        result = agent.refine_test_cases(feedback)
+        
+        status_placeholder.empty()
+        
+        if result["status"] == "error":
+            return {
+                "type": "error",
+                "content": f"❌ Error refining test cases: {result.get('error', 'Unknown error')}"
+            }
+        
+        # Update session state
+        st.session_state.design_data = result
+        st.session_state.test_cases = result["test_cases"]
+        
+        return {
+            "type": "success",
+            "content": f"✅ Updated test cases. Now have **{len(result['test_cases'])}** test cases with **{result['coverage']['percentage']:.1f}%** coverage.",
+            "data": result
+        }
+        
+    except Exception as e:
+        status_placeholder.empty()
+        return {
+            "type": "error",
+            "content": f"❌ Error: {str(e)}"
+        }
+
 def handle_exploration(url: str):
     """Handle URL exploration request"""
     
@@ -230,12 +430,22 @@ def main():
         
         st.divider()
         
-        # Quick Stats
-        if st.session_state.exploration_data:
-            st.subheader("📊 Session Stats")
+        # Quick Stats]
+        if st.session_state.current_phase == "exploration_complete":
             data = st.session_state.exploration_data
-            st.metric("Total Tokens Used", data['metrics']['llm_tokens'])
-            st.metric("Total Time", f"{data['metrics']['total_time']:.2f}s")
+            metrics = data.get("metrics", {})
+            st.session_state.llm_tokens = metrics.get("llm_tokens", 0)
+            st.session_state.total_time = metrics.get("total_time", 0.0)
+
+        elif st.session_state.current_phase == "design_complete":
+            data = st.session_state.design_data
+            metrics = data.get("metrics", {})
+            st.session_state.llm_tokens += metrics.get("llm_tokens", 0)
+            st.session_state.total_time += metrics.get("total_time", 0.0)
+
+        st.markdown("### Stats")
+        st.metric("LLM Tokens", f"{st.session_state.llm_tokens}")
+        st.metric("Total Time", f"{st.session_state.total_time:.2f}s")
         
         st.divider()
         
@@ -256,9 +466,11 @@ def main():
         st.divider()
     
     # Main content area
-    tab1, = st.tabs(["🧠 Explore"])
+    tab1, tab2 = st.tabs(["🧠 Explore", "🧪 Design"])
     
     with tab1:
+        st.markdown("### Exploration & Knowledge Acquisition")
+        st.markdown("Enter a URL to explore and analyze the web page structure.")
         
         # Chat messages
         for message in st.session_state.messages:
@@ -302,6 +514,56 @@ def main():
             
             # Rerun to display the updated messages
             st.rerun()
+    
+    with tab2:
+        st.markdown("### Collaborative Test Design")
+        st.markdown("Review and refine AI-generated test cases to achieve optimal coverage.")
+        
+        # Check if exploration is complete
+        if not st.session_state.exploration_data:
+            st.warning("⚠️ Please explore a URL first in the **Explore** tab.")
+        else:
+            # Generate test cases button
+            if not st.session_state.design_data:
+                if st.button("🚀 Generate Test Cases", type="primary", use_container_width=True):
+                    result = handle_test_generation()
+                    st.session_state.design_messages.append({
+                        "role": "assistant",
+                        "content": result["content"],
+                        "data": result.get("data")
+                    })
+                    st.rerun()
+            
+            # Display design results
+            if st.session_state.design_data:
+                display_design_results(st.session_state.design_data)
+                
+                st.divider()
+                
+                # Refinement section
+                st.markdown("#### 💬 Refine Test Cases")
+                st.markdown("Provide feedback to add, remove, or modify test cases.")
+                
+                # Show design conversation
+                for msg in st.session_state.design_messages:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+                
+                # Refinement input
+                if refinement_input := st.chat_input("Enter your feedback (e.g., 'add test for logout', 'remove TC003')..."):
+                    # Add user message
+                    st.session_state.design_messages.append({
+                        "role": "user",
+                        "content": refinement_input
+                    })
+                    
+                    # Process refinement
+                    result = handle_test_refinement(refinement_input)
+                    st.session_state.design_messages.append({
+                        "role": "assistant",
+                        "content": result["content"]
+                    })
+                    st.rerun()
 
 if __name__ == "__main__":
     main()
