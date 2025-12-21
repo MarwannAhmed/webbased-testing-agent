@@ -236,7 +236,6 @@ def main():
             data = st.session_state.exploration_data
             st.metric("Total Tokens Used", data['metrics']['llm_tokens'])
             st.metric("Total Time", f"{data['metrics']['total_time']:.2f}s")
-            st.metric("Elements Found", data['metrics']['elements_found'])
         
         st.divider()
         
@@ -255,25 +254,11 @@ def main():
             st.rerun()
         
         st.divider()
-        
-        # Help section
-        with st.expander("ℹ️ Help"):
-            st.markdown("""
-            **How to use:**
-            1. Enter a URL to explore a web page
-            2. Review the exploration results
-            3. Proceed to test design (coming soon)
-            
-            **Supported commands:**
-            - Enter any valid URL (http:// or https://)
-            - More commands coming soon!
-            """)
     
     # Main content area
-    tab1, tab2 = st.tabs(["💬 Chat", "📊 Exploration Details"])
+    tab1, = st.tabs(["🧠 Explore"])
     
     with tab1:
-        st.subheader("Chat Interface")
         
         # Chat messages
         for message in st.session_state.messages:
@@ -285,7 +270,7 @@ def main():
                     display_exploration_results(message["exploration_data"])
         
         # Chat input
-        if prompt := st.chat_input("Enter a URL to explore or ask a question..."):
+        if prompt := st.chat_input("Enter a URL to explore..."):
             # Add user message to session state
             st.session_state.messages.append({"role": "user", "content": prompt})
             
@@ -317,14 +302,6 @@ def main():
             
             # Rerun to display the updated messages
             st.rerun()
-    
-    with tab2:
-        st.subheader("Exploration Details")
-        
-        if st.session_state.exploration_data:
-            display_exploration_results(st.session_state.exploration_data)
-        else:
-            st.info("No exploration data yet. Enter a URL in the chat to get started!")
 
 if __name__ == "__main__":
     main()
