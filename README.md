@@ -116,18 +116,12 @@ webbased-testing-agent/
 ├── app.py              # Main Streamlit application
 ├── config.py           # Configuration management
 ├── requirements.txt    # Python dependencies
-├── .env               # Environment variables (not tracked)
-├── .gitignore         # Git ignore rules
-├── README.md          # Project documentation
-├── agents/            # Agent implementations
-│   └── __init__.py
-│   └── exploration_agent.py  # Phase 1: Exploration & Knowledge Acquisition
-├── components/        # UI components
-│   └── __init__.py
-└── utils/             # Utility functions
-    ├── __init__.py
-    ├── browser_controller.py  # Browser automation controller
-    └── gemini_client.py       # LLM client for AI integration
+├── .env                # Environment variables (not tracked)
+├── .gitignore          # Git ignore rules
+├── README.md           # Project documentation
+├── agents/             # Agent implementations
+├── components/         # UI components
+└── utils/              # Utility code
 ```
 
 ## 🛠️ Development
